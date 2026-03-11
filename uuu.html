@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>蓝调梦幻粒子树 - 丝带礼盒私人定制版</title>
+    <style>
+        :root { 
+            --gold: #ffd700; 
+            --deep-blue: #050b1a;
+            --royal-blue: #0a192f;
+        }
+        body { 
+            margin: 0; overflow: hidden; 
+            background: radial-gradient(circle at center, #1e3a8a 0%, var(--deep-blue) 100%);
+            font-family: 'PingFang SC', sans-serif; 
+        }
+        
+        /* UI 层 */
+        #ui-overlay {
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            color: white; background: rgba(255, 255, 255, 0.1);
+            padding: 15px; border-radius: 12px; backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .upload-btn {
+            display: inline-block; padding: 8px 15px; background: var(--gold);
+            color: #000; border-radius: 5px; cursor: pointer; font-weight: bold;
+            margin-top: 10px; transition: 0.3s;
+        }
+        .upload-btn:hover { transform: scale(1.05); box-shadow: 0 0 15px var(--gold); }
+
+        /* 照片弹出模态框 */
+        #photo-modal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0);
+            z-index: 200; width: 350px; background: rgba(255,255,255,0.9); padding: 15px;
+            border-radius: 15px; box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            text-align: center; transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(5px);
+        }
+        #photo-modal.active { transform: translate(-50%, -50%) scale(1); }
+        #photo-modal img { width: 100%; border-radius: 10px; max-height: 400px; object-fit: cover; border: 2px solid #fff; }
+
+        /* 纯文字弹出层 */
+        #message-toast {
+            position: fixed; top: 20%; left: 50%; transform: translate(-50%, -50%) scale(0);
+            z-index: 300; color: var(--gold); font-size: 2.5rem; font-weight: bold;
+            text-shadow: 0 0 20px rgba(255,215,0,0.8), 0 0 40px rgba(255,255,255,0.5);
+            pointer-events: none; transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            white-space: nowrap;
+        }
+        #message-toast.active { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+        
+        #close-btn { position: absolute; top: -10px; right: -10px; background: #fff; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; line-height: 30px; font-weight: bold; color: #333; }
+
+        .hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: #93c5fd; opacity: 0.8; pointer-events: none; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+<div id="ui-overlay">
+    <div style="font-size: 18px; font-weight: bold;">🌌 蓝调私人梦幻空间</div>
+    <div style="font-size: 12px; margin-top: 5px; opacity: 0.8;">上传照片，点击四周礼盒或装饰球</div>
+    <label class="upload-btn">
+        上传照片惊喜
+        <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+    </label>
+    <div id="file-count" style="font-size: 11px; margin-top: 5px;">已准备好 0 份照片惊喜</div>
+</div>
+
+<!-- 独立照片模态框 -->
+<div id="photo-modal">
+    <div id="close-btn">×</div>
+    <img id="reveal-img" src="" alt="照片">
+    <p style="color: #666; font-size: 12px; margin-top: 10px;">—— 唯美时刻 ——</p>
+</div>
+
+<!-- 独立文字弹出层 -->
+<div id="message-toast">你是最棒的！</div>
+
+<div class="hint">点击[红色礼盒]看照片 · 点击[金色小球]领取鼓励语</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    let scene, camera, renderer, treeParticles, snowParticles;
+    let gifts = [], ornaments = [];
+    let userPhotos = [];
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const encouragements = ["你是最棒的！", "你是唯一的璀璨", "遇见你，是最好的礼物", "永远保持自信和美丽", "陪你度过浪漫冬日", "加油，你是最闪耀的星"];
+
+    init();
+    animate();
+
+    function init() {
+        scene = new THREE.Scene();
+        // 设置深蓝色背景
+        scene.background = new THREE.Color(0x050b1a);
+        // 增加蓝色雾气
+        scene.fog = new THREE.FogExp2(0x050b1a, 0.015);
+
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 25, 60);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // 1. 绚丽粒子树
+        const particleCount = 12000;
+        const treeGeo = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        for (let i = 0; i < particleCount; i++) {
+            const ratio = i / particleCount;
+            const angle = 0.25 * i;
+            const r = (1 - ratio) * 18;
+            positions.push(Math.cos(angle) * r, ratio * 38, Math.sin(angle) * r);
+            const color = new THREE.Color();
+            // 青蓝色到金色的渐变
+            color.setHSL(0.5 + ratio * 0.1, 0.8, 0.4 + ratio * 0.3);
+            colors.push(color.r, color.g, color.b);
+        }
+        treeGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        treeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        treeParticles = new THREE.Points(treeGeo, new THREE.PointsMaterial({
+            size: 0.2, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8
+        }));
+        scene.add(treeParticles);
+
+        // 2. 丝带状环绕礼盒 (螺旋上升分布)
+        const giftGeo = new THREE.BoxGeometry(2, 2, 2);
+        for (let i = 0; i < 10; i++) {
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.7, roughness: 0.3 });
+            const box = new THREE.Mesh(giftGeo, boxMat);
+            
+            // 计算丝带状螺旋位置
+            const h = 2 + i * 3.5; // 高度分布
+            const angle = i * 1.2; // 旋转分布
+            const r = (1 - h/45) * 18 + 3; // 距离树的半径
+            
+            box.position.set(Math.cos(angle) * r, h, Math.sin(angle) * r);
+            box.rotation.set(Math.random(), Math.random(), Math.random());
+            box.userData = { type: 'photo' };
+            scene.add(box);
+            gifts.push(box);
+        }
+
+        // 3. 金属质感装饰球 (Ornaments - 触发文字)
+        const sphereGeo = new THREE.SphereGeometry(0.7, 32, 32);
+        for (let i = 0; i < 20; i++) {
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffd700, metalness: 0.9, roughness: 0.1, emissive: 0x332200
+            });
+            const sphere = new THREE.Mesh(sphereGeo, mat);
+            const h = Math.random() * 32 + 2;
+            const r = (1 - h/40) * 18;
+            const a = Math.random() * Math.PI * 2;
+            sphere.position.set(Math.cos(a)*r, h, Math.sin(a)*r);
+            sphere.userData = { type: 'text' };
+            scene.add(sphere);
+            ornaments.push(sphere);
+        }
+
+        // 4. 雪花背景
+        const snowGeo = new THREE.BufferGeometry();
+        const snowPos = [];
+        for (let i = 0; i < 1500; i++) {
+            snowPos.push((Math.random()-0.5)*120, Math.random()*100, (Math.random()-0.5)*120);
+        }
+        snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
+        snowParticles = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.2, transparent: true, opacity: 0.8 }));
+        scene.add(snowParticles);
+
+        // 5. 灯光
+        const pLight = new THREE.PointLight(0xffffff, 1.5, 100);
+        pLight.position.set(20, 30, 20);
+        scene.add(pLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // 事件监听
+        window.addEventListener('mousedown', onInteract);
+        window.addEventListener('resize', onResize);
+        document.getElementById('imageInput').addEventListener('change', handleUpload);
+        document.getElementById('close-btn').onclick = () => document.getElementById('photo-modal').classList.remove('active');
+    }
+
+    function handleUpload(e) {
+        const files = e.target.files;
+        for (let file of files) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                userPhotos.push(event.target.result);
+                document.getElementById('file-count').innerText = `已准备好 ${userPhotos.length} 份照片惊喜`;
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function onInteract(e) {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        
+        const allInteractables = [...gifts, ...ornaments];
+        const intersects = raycaster.intersectObjects(allInteractables);
+        
+        if (intersects.length > 0) {
+            const obj = intersects[0].object;
+            if (obj.userData.type === 'photo') {
+                openPhoto(obj);
+            } else {
+                openText(obj);
+            }
+        }
+    }
+
+    function openPhoto(obj) {
+        const modal = document.getElementById('photo-modal');
+        const img = document.getElementById('reveal-img');
+        
+        obj.scale.set(0, 0, 0); // 点击反馈
+        setTimeout(() => obj.scale.set(1, 1, 1), 3000);
+
+        if (userPhotos.length > 0) {
+            img.src = userPhotos[Math.floor(Math.random() * userPhotos.length)];
+        } else {
+            img.src = "https://images.unsplash.com/photo-1512909006721-3d6018887383?w=400";
+        }
+        modal.classList.add('active');
+    }
+
+    function openText(obj) {
+        const toast = document.getElementById('message-toast');
+        toast.innerText = encouragements[Math.floor(Math.random() * encouragements.length)];
+        
+        // 点击反馈：球体闪烁一下
+        obj.material.emissive.setHex(0xffffff);
+        setTimeout(() => obj.material.emissive.setHex(0x332200), 200);
+
+        toast.classList.add('active');
+        setTimeout(() => toast.classList.remove('active'), 2000);
+    }
+
+    function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const time = Date.now() * 0.001;
+
+        treeParticles.rotation.y += 0.002;
+        
+        // 礼盒与装饰球轻微漂浮感
+        gifts.forEach((g, i) => {
+            g.position.y += Math.sin(time + i) * 0.01;
+            g.rotation.y += 0.01;
+        });
+        ornaments.forEach((o, i) => {
+            o.position.y += Math.cos(time + i) * 0.005;
+        });
+
+        // 雪花落下
+        const snowAttr = snowParticles.geometry.attributes.position;
+        for (let i = 1; i < snowAttr.array.length; i += 3) {
+            snowAttr.array[i] -= 0.1;
+            if (snowAttr.array[i] < 0) snowAttr.array[i] = 100;
+        }
+        snowAttr.needsUpdate = true;
+
+        // 视角感应
+        camera.position.x += (mouse.x * 15 - camera.position.x) * 0.05;
+        camera.lookAt(0, 18, 0);
+
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>
